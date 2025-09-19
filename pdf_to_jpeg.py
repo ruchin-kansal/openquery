@@ -13,7 +13,16 @@ except Exception as import_error:  # pragma: no cover
     raise
 
 
-def convert_pdf_to_jpeg(input_pdf_path: str) -> None:
+def convert_pdf_to_jpeg(
+    input_pdf_path: str,
+    dpi: int | None = 144,
+    zoom: float | None = None,
+    jpg_quality: int = 95,
+    jpg_subsampling: int = 0,
+    jpg_progressive: bool = False,
+    jpg_optimize: bool = False,
+    colorspace_name: str = "rgb",
+) -> None:
     """Convert a PDF into JPEG image(s).
 
     - If the PDF has one page, output is `<stem>.jpg`.
@@ -34,13 +43,35 @@ def convert_pdf_to_jpeg(input_pdf_path: str) -> None:
         if page_count == 0:
             raise ValueError("PDF contains no pages")
 
-        # Use a zoom for better quality (approx 144 DPI with 2x zoom)
-        zoom_factor = 2.0
+        # Determine render scale: prefer explicit zoom, else compute from DPI
+        if zoom is not None and zoom <= 0:
+            raise ValueError("zoom must be > 0")
+        if zoom is None:
+            if dpi is None or dpi <= 0:
+                raise ValueError("dpi must be > 0 if zoom not provided")
+            zoom_factor = float(dpi) / 72.0
+        else:
+            zoom_factor = float(zoom)
+
         transform_matrix = fitz.Matrix(zoom_factor, zoom_factor)
+
+        # Choose colorspace
+        if colorspace_name.lower() == "rgb":
+            colorspace = fitz.csRGB
+        elif colorspace_name.lower() == "gray":
+            colorspace = fitz.csGRAY
+        elif colorspace_name.lower() == "cmyk":
+            colorspace = fitz.csCMYK
+        else:
+            raise ValueError("colorspace must be one of: rgb, gray, cmyk")
 
         for page_index in range(page_count):
             page = document.load_page(page_index)
-            pixmap = page.get_pixmap(matrix=transform_matrix, alpha=False)
+            pixmap = page.get_pixmap(
+                matrix=transform_matrix,
+                alpha=False,
+                colorspace=colorspace,
+            )
 
             if page_count == 1:
                 output_filename = f"{stem}.jpg"
@@ -48,7 +79,14 @@ def convert_pdf_to_jpeg(input_pdf_path: str) -> None:
                 output_filename = f"{stem}_p{page_index + 1}.jpg"
 
             output_path = os.path.join(directory, output_filename)
-            pixmap.save(output_path)
+            # Save with JPEG encoder options
+            pixmap.save(
+                output_path,
+                jpg_quality=int(jpg_quality),
+                jpg_subsampling=int(jpg_subsampling),
+                jpg_progressive=bool(jpg_progressive),
+                jpg_optimize=bool(jpg_optimize),
+            )
             print(f"Wrote: {output_path}")
 
 
@@ -61,13 +99,66 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         metavar="PDF_PATH",
         help="Path to the input PDF file",
     )
+
+    zoom_group = parser.add_mutually_exclusive_group()
+    zoom_group.add_argument(
+        "--dpi",
+        type=int,
+        default=144,
+        help="Rendering DPI (default: 144). 72 DPI corresponds to 1.0 zoom.",
+    )
+    zoom_group.add_argument(
+        "--zoom",
+        type=float,
+        default=None,
+        help="Explicit zoom factor (overrides --dpi). Example: 2.0 ≈ 144 DPI.",
+    )
+
+    parser.add_argument(
+        "--quality",
+        type=int,
+        default=95,
+        help="JPEG quality 1-100 (higher is better; default: 95)",
+    )
+    parser.add_argument(
+        "--subsampling",
+        choices=["444", "422", "420", "0", "1", "2"],
+        default="444",
+        help="Chroma subsampling: 444(0), 422(1), 420(2). Default: 444",
+    )
+    parser.add_argument(
+        "--progressive",
+        action="store_true",
+        help="Write progressive JPEGs",
+    )
+    parser.add_argument(
+        "--optimize",
+        action="store_true",
+        help="Optimize JPEG Huffman tables",
+    )
+    parser.add_argument(
+        "--colorspace",
+        choices=["rgb", "gray", "cmyk"],
+        default="rgb",
+        help="Output colorspace (default: rgb)",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
     try:
-        convert_pdf_to_jpeg(args.pdf)
+        subsampling_map: dict[str, int] = {"444": 0, "422": 1, "420": 2, "0": 0, "1": 1, "2": 2}
+        convert_pdf_to_jpeg(
+            input_pdf_path=args.pdf,
+            dpi=args.dpi,
+            zoom=args.zoom,
+            jpg_quality=max(1, min(100, int(args.quality))),
+            jpg_subsampling=subsampling_map[str(args.subsampling)],
+            jpg_progressive=bool(args.progressive),
+            jpg_optimize=bool(args.optimize),
+            colorspace_name=args.colorspace,
+        )
     except Exception as error:  # pragma: no cover
         sys.stderr.write(f"Error: {error}\n")
         return 1
