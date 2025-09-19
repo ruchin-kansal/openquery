@@ -22,6 +22,7 @@ def convert_pdf_to_jpeg(
     jpg_progressive: bool = False,
     jpg_optimize: bool = False,
     colorspace_name: str = "rgb",
+    output_format: str = "jpeg",
 ) -> None:
     """Convert a PDF into JPEG image(s).
 
@@ -73,20 +74,28 @@ def convert_pdf_to_jpeg(
                 colorspace=colorspace,
             )
 
-            if page_count == 1:
-                output_filename = f"{stem}.jpg"
+            if output_format.lower() == "png":
+                ext = "png"
             else:
-                output_filename = f"{stem}_p{page_index + 1}.jpg"
+                ext = "jpg"
+
+            if page_count == 1:
+                output_filename = f"{stem}.{ext}"
+            else:
+                output_filename = f"{stem}_p{page_index + 1}.{ext}"
 
             output_path = os.path.join(directory, output_filename)
-            # Save with JPEG encoder options
-            pixmap.save(
-                output_path,
-                jpg_quality=int(jpg_quality),
-                jpg_subsampling=int(jpg_subsampling),
-                jpg_progressive=bool(jpg_progressive),
-                jpg_optimize=bool(jpg_optimize),
-            )
+            # Save with format-specific options
+            if output_format.lower() == "png":
+                pixmap.save(output_path)
+            else:
+                pixmap.save(
+                    output_path,
+                    jpg_quality=int(jpg_quality),
+                    jpg_subsampling=int(jpg_subsampling),
+                    jpg_progressive=bool(jpg_progressive),
+                    jpg_optimize=bool(jpg_optimize),
+                )
             print(f"Wrote: {output_path}")
 
 
@@ -104,8 +113,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     zoom_group.add_argument(
         "--dpi",
         type=int,
-        default=144,
-        help="Rendering DPI (default: 144). 72 DPI corresponds to 1.0 zoom.",
+        default=300,
+        help="Rendering DPI (default: 300). 72 DPI corresponds to 1.0 zoom.",
     )
     zoom_group.add_argument(
         "--zoom",
@@ -142,6 +151,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default="rgb",
         help="Output colorspace (default: rgb)",
     )
+    parser.add_argument(
+        "--format",
+        choices=["jpeg", "png"],
+        default="jpeg",
+        help="Output format (default: jpeg). PNG is lossless and sharper for text.",
+    )
     return parser.parse_args(argv)
 
 
@@ -158,6 +173,7 @@ def main(argv: list[str]) -> int:
             jpg_progressive=bool(args.progressive),
             jpg_optimize=bool(args.optimize),
             colorspace_name=args.colorspace,
+            output_format=args.format,
         )
     except Exception as error:  # pragma: no cover
         sys.stderr.write(f"Error: {error}\n")
