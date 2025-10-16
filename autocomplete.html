@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Google Places Autocomplete Demo</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji", "Segoe UI Emoji"; margin: 0; padding: 24px; line-height: 1.5; }
+    .container { max-width: 720px; margin: 0 auto; }
+    h2 { margin: 0 0 16px; }
+    label { display: block; font-weight: 600; margin-bottom: 6px; }
+    input[type="text"], input[type="password"] { width: 100%; padding: 10px 12px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; outline: none; }
+    input[disabled] { background: #f4f4f4; }
+    .row { margin-bottom: 16px; }
+    .actions { display:flex; gap: 8px; align-items: center; margin-top: 8px; }
+    button { padding: 10px 14px; font-size: 15px; border-radius: 8px; border: 1px solid #888; cursor: pointer; background: #f0f0f0; }
+    .status { font-size: 14px; color: #444; }
+    .note { font-size: 13px; color: #666; }
+    .error { color: #b00020; }
+    .success { color: #0a7a3c; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Google Places Autocomplete</h2>
+
+    <div class="row">
+      <label for="api-key-input">Google API Key (with Maps JavaScript API and Places API enabled)</label>
+      <input id="api-key-input" type="password" placeholder="Enter your API key" autocomplete="off" />
+      <div class="actions">
+        <button id="load-api-btn" type="button">Load API</button>
+        <span id="status-text" class="status">API not loaded</span>
+      </div>
+      <div class="note">Your key must allow this origin (domain) and have billing enabled.</div>
+      <div id="error-text" class="error" role="alert" style="display:none;"></div>
+    </div>
+
+    <div class="row">
+      <label for="place-input">Search place</label>
+      <input id="place-input" type="text" placeholder="Start typing to see suggestions" disabled />
+    </div>
+
+    <div class="row">
+      <div id="selection" class="note"></div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      let autocompleteInstance = null;
+      let mapsApiLoaded = false;
+
+      function setStatus(text, isSuccess) {
+        const statusEl = document.getElementById('status-text');
+        if (!statusEl) return;
+        statusEl.textContent = text;
+        statusEl.className = 'status' + (isSuccess ? ' success' : '');
+      }
+
+      function showError(message) {
+        const errorEl = document.getElementById('error-text');
+        if (!errorEl) return;
+        errorEl.textContent = message || '';
+        errorEl.style.display = message ? 'block' : 'none';
+      }
+
+      function enablePlaceInput(enable) {
+        const placeInput = document.getElementById('place-input');
+        placeInput.disabled = !enable;
+      }
+
+      function initializeAutocomplete() {
+        const placeInput = document.getElementById('place-input');
+        if (!placeInput) return;
+
+        if (autocompleteInstance) {
+          autocompleteInstance.unbindAll && autocompleteInstance.unbindAll();
+          autocompleteInstance = null;
+        }
+
+        const options = {
+          fields: ['place_id', 'geometry', 'name', 'formatted_address']
+          // You can restrict the results further with options like:
+          // types: ['geocode']
+        };
+
+        autocompleteInstance = new google.maps.places.Autocomplete(placeInput, options);
+        autocompleteInstance.addListener('place_changed', () => {
+          const place = autocompleteInstance.getPlace();
+          const selectionEl = document.getElementById('selection');
+          if (!place || !place.name) {
+            selectionEl.textContent = '';
+            return;
+          }
+          selectionEl.textContent = `Selected: ${place.name}${place.formatted_address ? ' — ' + place.formatted_address : ''}`;
+        });
+
+        enablePlaceInput(true);
+        placeInput.focus();
+        setStatus('API loaded. Type to see suggestions.', true);
+      }
+
+      function loadMapsScriptWithKey(apiKey) {
+        return new Promise((resolve, reject) => {
+          if (window.google && window.google.maps && window.google.maps.places) {
+            mapsApiLoaded = true;
+            resolve();
+            return;
+          }
+
+          const existing = document.querySelector('script[data-role="gmaps-script"]');
+          if (existing) {
+            reject(new Error('Google Maps script already added. Refresh page to change the API key.'));
+            return;
+          }
+
+          const script = document.createElement('script');
+          script.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(apiKey) + '&libraries=places&callback=__onGoogleMapsLoaded';
+          script.async = true;
+          script.defer = true;
+          script.setAttribute('data-role', 'gmaps-script');
+
+          const timeoutId = setTimeout(() => {
+            reject(new Error('Loading Google Maps API timed out.'));
+          }, 30000);
+
+          window.__onGoogleMapsLoaded = function () {
+            clearTimeout(timeoutId);
+            mapsApiLoaded = true;
+            resolve();
+          };
+
+          script.onerror = function () {
+            clearTimeout(timeoutId);
+            reject(new Error('Failed to load Google Maps JavaScript API. Check your key and network.'));
+          };
+
+          document.head.appendChild(script);
+        });
+      }
+
+      function onLoadClicked() {
+        showError('');
+        const apiKeyInput = document.getElementById('api-key-input');
+        const apiKey = (apiKeyInput.value || '').trim();
+        if (!apiKey) {
+          showError('Please enter your API key.');
+          return;
+        }
+
+        if (mapsApiLoaded) {
+          setStatus('API already loaded.', true);
+          initializeAutocomplete();
+          return;
+        }
+
+        setStatus('Loading Google Maps API...', false);
+        loadMapsScriptWithKey(apiKey)
+          .then(() => {
+            initializeAutocomplete();
+          })
+          .catch((err) => {
+            showError(err && err.message ? err.message : String(err));
+            setStatus('API not loaded', false);
+          });
+      }
+
+      document.getElementById('load-api-btn').addEventListener('click', onLoadClicked);
+      document.getElementById('api-key-input').addEventListener('keydown', (evt) => {
+        if (evt.key === 'Enter') {
+          onLoadClicked();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
