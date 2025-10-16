@@ -19,6 +19,8 @@
     .note { font-size: 13px; color: #666; }
     .error { color: #b00020; }
     .success { color: #0a7a3c; }
+    .section-title { font-weight: 600; margin: 0 0 6px; }
+    pre.json-box { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 13px; background: #f7f7f7; border: 1px solid #ddd; border-radius: 8px; padding: 12px; overflow: auto; max-height: 320px; }
   </style>
 </head>
 <body>
@@ -43,6 +45,10 @@
 
     <div class="row">
       <div id="selection" class="note"></div>
+    </div>
+    <div class="row">
+      <div class="section-title">Raw JSON</div>
+      <pre id="raw-json" class="json-box" aria-live="polite"></pre>
     </div>
   </div>
 
@@ -80,7 +86,8 @@
         }
 
         const options = {
-          fields: ['place_id', 'geometry', 'name', 'formatted_address']
+          fields: ['place_id', 'geometry', 'name', 'formatted_address', 'address_components', 'types'],
+          componentRestrictions: { country: 'us' }
           // You can restrict the results further with options like:
           // types: ['geocode']
         };
@@ -89,11 +96,20 @@
         autocompleteInstance.addListener('place_changed', () => {
           const place = autocompleteInstance.getPlace();
           const selectionEl = document.getElementById('selection');
-          if (!place || !place.name) {
+          const rawEl = document.getElementById('raw-json');
+          if (!place || (!place.name && !place.formatted_address)) {
             selectionEl.textContent = '';
+            if (rawEl) rawEl.textContent = '';
             return;
           }
-          selectionEl.textContent = `Selected: ${place.name}${place.formatted_address ? ' — ' + place.formatted_address : ''}`;
+          selectionEl.textContent = `Selected: ${place.name ?? ''}${place.formatted_address ? (place.name ? ' — ' : '') + place.formatted_address : ''}`;
+          if (rawEl) {
+            try {
+              rawEl.textContent = JSON.stringify(place, null, 2);
+            } catch (e) {
+              rawEl.textContent = 'Unable to serialize place to JSON.';
+            }
+          }
         });
 
         enablePlaceInput(true);
