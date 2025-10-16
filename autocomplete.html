@@ -95,9 +95,8 @@
 
         const options = {
           fields: ['place_id', 'geometry', 'name', 'formatted_address', 'address_components', 'types'],
-          componentRestrictions: { country: 'us' }
-          // You can restrict the results further with options like:
-          // types: ['geocode']
+          componentRestrictions: { country: 'us' },
+          types: ['(regions)'] // cities, states, postal codes, etc.
         };
 
         autocompleteInstance = new google.maps.places.Autocomplete(placeInput, options);
@@ -133,7 +132,7 @@
           if (!val) { showError(''); return; }
           try {
             autocompleteService.getPlacePredictions(
-              { input: val, componentRestrictions: { country: 'us' } },
+              { input: val, componentRestrictions: { country: 'us' }, types: ['(regions)'] },
               (predictions, status) => {
                 const S = google.maps.places.PlacesServiceStatus;
                 if (status === S.OK || status === S.ZERO_RESULTS) {
