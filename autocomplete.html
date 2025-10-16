@@ -21,6 +21,8 @@
     .success { color: #0a7a3c; }
     .section-title { font-weight: 600; margin: 0 0 6px; }
     pre.json-box { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 13px; background: #f7f7f7; border: 1px solid #ddd; border-radius: 8px; padding: 12px; overflow: auto; max-height: 320px; }
+    /* Ensure the Google Autocomplete dropdown is visible above other content */
+    .pac-container { z-index: 2147483647; }
   </style>
 </head>
 <body>
@@ -55,7 +57,9 @@
   <script>
     (function () {
       let autocompleteInstance = null;
+      let autocompleteService = null;
       let mapsApiLoaded = false;
+      let inputListener = null;
 
       function setStatus(text, isSuccess) {
         const statusEl = document.getElementById('status-text');
@@ -84,6 +88,10 @@
           autocompleteInstance.unbindAll && autocompleteInstance.unbindAll();
           autocompleteInstance = null;
         }
+        if (inputListener) {
+          placeInput.removeEventListener('input', inputListener);
+          inputListener = null;
+        }
 
         const options = {
           fields: ['place_id', 'geometry', 'name', 'formatted_address', 'address_components', 'types'],
@@ -111,6 +119,41 @@
             }
           }
         });
+
+        // Create a parallel AutocompleteService to surface status errors (quota, auth, etc.)
+        autocompleteService = new google.maps.places.AutocompleteService();
+
+        const debounced = (fn, ms) => {
+          let t = null;
+          return (...args) => { clearTimeout(t); t = setTimeout(() => fn.apply(null, args), ms); };
+        };
+
+        inputListener = debounced(() => {
+          const val = placeInput.value.trim();
+          if (!val) { showError(''); return; }
+          try {
+            autocompleteService.getPlacePredictions(
+              { input: val, componentRestrictions: { country: 'us' } },
+              (predictions, status) => {
+                const S = google.maps.places.PlacesServiceStatus;
+                if (status === S.OK || status === S.ZERO_RESULTS) {
+                  showError('');
+                } else if (status === S.OVER_QUERY_LIMIT) {
+                  showError('Places API quota exceeded (OVER_QUERY_LIMIT).');
+                } else if (status === S.REQUEST_DENIED) {
+                  showError('Request denied. Check API restrictions and billing.');
+                } else if (status === S.INVALID_REQUEST) {
+                  showError('Invalid request. Try typing more characters.');
+                } else { // UNKNOWN_ERROR or others
+                  showError('Places Autocomplete error: ' + status);
+                }
+              }
+            );
+          } catch (e) {
+            showError('Places Autocomplete failed: ' + (e && e.message ? e.message : String(e)));
+          }
+        }, 200);
+        placeInput.addEventListener('input', inputListener);
 
         enablePlaceInput(true);
         placeInput.focus();
@@ -155,6 +198,13 @@
           document.head.appendChild(script);
         });
       }
+
+      // Handle authentication failures from Google Maps JS API
+      window.gm_authFailure = function () {
+        showError('Google Maps authentication failed. Verify API key, referrer restrictions, billing, and API enablement (Maps JavaScript API + Places API).');
+        setStatus('API auth failed', false);
+        enablePlaceInput(false);
+      };
 
       function onLoadClicked() {
         showError('');
